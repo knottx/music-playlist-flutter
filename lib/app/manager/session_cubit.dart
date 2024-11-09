@@ -8,6 +8,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:music_playlist/app/constants/player_status.dart';
+import 'package:music_playlist/app/manager/audio_player_handler.dart';
 import 'package:music_playlist/app/manager/session_state.dart';
 import 'package:music_playlist/app/models/lyrics_model.dart';
 import 'package:music_playlist/app/models/music_model.dart';
@@ -67,6 +68,7 @@ class SessionCubit extends Cubit<SessionState> {
           );
           break;
       }
+
       final audioPlayerHandler = AudioPlayerHandler.instance;
       audioPlayerHandler.playbackState.add(
         audioPlayerHandler.playbackState.value.copyWith(
@@ -76,6 +78,9 @@ class SessionCubit extends Cubit<SessionState> {
             MediaControl.play,
             MediaControl.skipToNext,
           ],
+          systemActions: const {
+            MediaAction.seek,
+          },
           processingState: AudioProcessingState.ready,
           playing: playing,
         ),
@@ -312,6 +317,19 @@ class SessionCubit extends Cubit<SessionState> {
     }
   }
 
+  void confirmSeekToPosition(Duration position) async {
+    if (state.playerStatus.isStopped) return;
+    try {
+      final maxDuration = state.maxDuration;
+      if (maxDuration != null && position <= maxDuration) {
+        await _player.seek(position);
+        emit(state.copyWith(onSeek: false));
+      }
+    } catch (error) {
+      rethrow;
+    }
+  }
+
   Future<void> confirmSeek(double value) async {
     if (!state.onSeek) return;
     try {
@@ -523,51 +541,5 @@ class SessionCubit extends Cubit<SessionState> {
       ),
     );
     emit(state.copyWith(allLyrics: allLyrics));
-  }
-}
-
-class AudioPlayerHandler extends BaseAudioHandler with SeekHandler {
-  static late final AudioPlayerHandler instance;
-  static bool _isInitialized = false;
-
-  static Future<void> initialize() async {
-    if (_isInitialized) return;
-
-    instance = await AudioService.init<AudioPlayerHandler>(
-      builder: () => AudioPlayerHandler(),
-      config: const AudioServiceConfig(
-        androidNotificationChannelId:
-            'com.example.music_playlist.channel.audio',
-        androidNotificationChannelName: 'Audio playback',
-        androidNotificationOngoing: true,
-      ),
-    );
-
-    _isInitialized = true;
-    return;
-  }
-
-  @override
-  Future<void> play() async {
-    await SessionCubit.instance.resume();
-    return super.play();
-  }
-
-  @override
-  Future<void> pause() async {
-    await SessionCubit.instance.pause();
-    return super.pause();
-  }
-
-  @override
-  Future<void> skipToPrevious() {
-    SessionCubit.instance.playPrevious();
-    return super.skipToNext();
-  }
-
-  @override
-  Future<void> skipToNext() {
-    SessionCubit.instance.playNext();
-    return super.skipToNext();
   }
 }
